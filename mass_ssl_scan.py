@@ -1,6 +1,7 @@
 """A module to run SSLScan against a list of targets and output it into a reportable format"""
 import argparse
 import csv
+from datetime import datetime
 import re
 import sys
 
@@ -8,7 +9,13 @@ import pexpect
 
 WEAK_PROTOCOLS = ["SSLv2", "SSLv3", "TLSv1.0", "TLSv1.1"]
 WEAK_CIPHERS = ["RC4-SHA", "RC4-MD5", "DES-CBC3-SHA", "DHE-RSA-DES-CBC3-SHA"]
-WEAK_SIGNATURE_ALGORITHMS = ["rsa_pkcs1_sha1", "rsa_pkcs1_sha224", "dsa_sha1", "ecdsa_sha1", "dsa_sha224", "dsa_sha256", "dsa_sha384", "dsa_sha512", "all signature algorithms"]
+WEAK_SIGNATURE_ALGORITHMS = ["rsa_pkcs1_sha1", "rsa_pkcs1_sha224", "dsa_sha1", "ecdsa_sha1",
+                             "dsa_sha224", "dsa_sha256", "dsa_sha384", "dsa_sha512", "all signature algorithms"]
+
+def escape_ansi(line):
+    """Remove ansi codes from the terminal output"""
+    ansi_escape = re.compile(r'(?:\x1B[@-_]|[\x80-\x9F])[0-?]*[ -/]*[@-~]')
+    return ansi_escape.sub('', line)
 
 def parse_sslscan_output(output):
     """Parse the results of running SSLScan, gathering weak configurations"""
@@ -40,9 +47,22 @@ def parse_sslscan_output(output):
                 weak_configs.append(algo)
     except:
         pass
-    # TODO: Parse Expired Certificate
-
-    # TODO: Parse Self-Signed Certificate
+    try:
+        # Parse Expired Certificate
+        expire_date_string = escape_ansi(re.search(r"after:[\s\S.]*", output)[0]).split('after:')[1].strip()
+        expire_date = datetime.strptime(expire_date_string, '%b %d %H:%M:%S %Y GMT')
+        if datetime.now() > expire_date:
+            weak_configs.append("Expired Certificate")
+    except:
+        pass
+    try:
+        # Parse Self-Signed Certificate
+        issuer_string = re.search(r"Issuer:[\s\S.]*Not", output)[0]
+        if '\x1b[31m' in issuer_string:
+            weak_configs.append("Self Signed Certificate")
+    except Exception as exc:
+        print(f"exceptioin: {exc}")
+        pass
     return weak_configs
 
 
